@@ -3,7 +3,7 @@
 
 //todo config
 
-#define DEBUG
+//#define DEBUG
 
 int smooth = 0;
 int daemonize = 0;
