@@ -1,4 +1,8 @@
+include config.mk
 all:
-	gcc -O2 main.c -o autobacklight
+	gcc $(CFLAGS) main.c -o $(TARGET)
+install:
+	@echo installing to $(DESTDIR)$(PREFIX)/bin
+	@install -D -m755 $(TARGET) $(DESTDIR)$(PREFIX)/bin/$(TARGET)
 clean:
-	rm -f autobacklight
+	rm -f $(TARGET)
