@@ -99,22 +99,42 @@ int main(int argc, char **argv) {
     do {
         int current_light, new_light;
         current_light = read_light_value(light_sensor);
-        new_light = (read_value(max_screen_backlight) * current_light) / 10;
-        if(new_light < min_backlight_percentage)
-            new_light = min_backlight_percentage;
-        if(new_light > max_backlight_percentage)
-            new_light = max_backlight_percentage;
-        if(oneshot || abs(new_light - get_backlight()) > 5)
-            set_backlight(new_light);
-        if(current_light == 0)
-            new_light = max_keyboard_percentage;
-        else
-            new_light = read_value(max_keyboard_backlight) / (current_light * 50);
-        if(new_light < min_keyboard_percentage)
-            new_light = min_keyboard_percentage;
-        if(new_light > max_keyboard_percentage)
-            new_light = max_keyboard_percentage;
-        if(oneshot || abs(new_light - get_keyboard_light()) > 5)
-            set_keyboard_light(new_light);
+#ifdef DEBUG
+        printf("Current light: %d\n", current_light);
+#endif
+        if(autobacklight) {
+            new_light = current_light;
+            if(new_light < min_backlight_percentage)
+                new_light = min_backlight_percentage;
+            if(new_light > max_backlight_percentage)
+                new_light = max_backlight_percentage;
+            if(oneshot || abs(new_light - get_backlight()) > 5)
+                set_backlight(new_light);
+#ifdef DEBUG
+            else
+                printf("Not setting new value; old too close. (%d, %d)\n",
+                            get_backlight(), new_light);
+#endif
+        }
+        if(autokeyboard) {
+            if(current_light == 0)
+                new_light = max_keyboard_percentage;
+            else
+                new_light = 1 / (current_light / 30.0);
+            if(new_light < min_keyboard_percentage)
+                new_light = min_keyboard_percentage;
+            if(new_light > max_keyboard_percentage)
+                new_light = max_keyboard_percentage;
+            if(oneshot || abs(new_light - get_keyboard_light()) > 1)
+                set_keyboard_light(new_light);
+#ifdef DEBUG
+            else
+                printf("Not setting new value; old too close. (%d, %d)\n",
+                            get_keyboard_light(), new_light);
+#endif
+        }
     } while(!oneshot && !nanosleep(&sleep_time, NULL));
+#ifdef DEBUG
+    printf("Exiting.\n");
+#endif
 }
