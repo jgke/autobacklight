@@ -17,7 +17,10 @@
 
 #define abs(i) ((i) < 0 ? (-(i)) : (i))
 
-void handle_arguments(int argc, char **argv) {}
+void handle_arguments(int argc, char **argv) {
+    if(!smooth)
+        max_steps = 1;
+}
 
 int read_value(char *name) {
     FILE *fp;
@@ -43,52 +46,83 @@ int read_light_value(char *name) {
 
 void write_value(char *name, int new) {
     FILE *fp;
-    fp = fopen(name, "w");
-    check_error(fp == NULL, "Failed to write value");
-    check_error(fprintf(fp, "%d", new) < 1,
-                "Failed to write value");
-    fclose(fp);
+    if(!pretend) {
+        fp = fopen(name, "w");
+        check_error(fp == NULL, "Failed to write value");
+        check_error(fprintf(fp, "%d", new) < 1,
+                    "Failed to write value");
+        fclose(fp);
+    }
 }
 
-int get_backlight() {
-    int value;
-    int max;
-    value = read_value(screen_backlight);
-    max = read_value(max_screen_backlight);
-    return (value * 100) / max;
+int build_value(float min_x, float max_x, float min_y,
+                  float max_y, float current) {
+    if(current <= min_x)
+        return min_y;
+    if(current >= max_x)
+        return max_y;
+    return min_y + (max_y - min_y) / (max_x - max_y) * (current  - min_x);
 }
 
-int get_keyboard_light() {
-    int value;
-    int max;
-    value = read_value(keyboard_backlight);
-    max = read_value(max_keyboard_backlight);
-    return (value * 100) / max;
-}
-
-void set_backlight(int new) {
-    int max;
+void main_loop() {
+    struct timespec sleep_time;
+    int current_light;
+    int current_backlight, new_backlight;
+    int current_keyboard_light, new_keyboard_light;
+    int backlight_step, keyboard_step;
+    int i;
+    current_backlight = new_backlight = 0;
+    current_keyboard_light = new_keyboard_light = 0;
+    backlight_step = keyboard_step = 0;
+    current_light = read_light_value(light_sensor);
 #ifdef DEBUG
-    printf("Settings new screen light value to %d.\n", new);
+    printf("Current light: %d\n", current_light);
 #endif
-    max = read_value(max_screen_backlight);
-    write_value(screen_backlight, (max * new) / 100);
-}
-
-void set_keyboard_light(int new) {
-    int max;
+    if(autobacklight) {
+        current_backlight = read_value(screen_backlight);
+        new_backlight = build_value(dark_light_value,
+                                    bright_light_value,
+                                    dark_backlight_value,
+                                    bright_backlight_value,
+                                    current_light);
+        backlight_step = (new_backlight - current_backlight) / max_steps;
+    }
+    if(autokeyboard) {
+        current_keyboard_light = read_value(keyboard_backlight);
+        new_keyboard_light = build_value(dark_light_value,
+                                         bright_light_value,
+                                         dark_keyboard_value,
+                                         bright_keyboard_value,
+                                         current_light);
+        keyboard_step = (new_keyboard_light - current_keyboard_light) / max_steps;
+    }
+    for(i = 0; i < max_steps; i++) {
+        if(autobacklight) {
+            current_backlight += backlight_step;
 #ifdef DEBUG
-    printf("Settings new keyboard light value to %d.\n", new);
+            printf("Setting current light to %d.\n", current_backlight);
 #endif
-    max = read_value(max_keyboard_backlight);
-    write_value(keyboard_backlight, (max * new) / 100);
+            write_value(screen_backlight, current_backlight);
+        }
+        if(autokeyboard) {
+            current_keyboard_light += keyboard_step;
+#ifdef DEBUG
+            printf("Setting current keyboard light to %d.\n", current_keyboard_light);
+#endif
+            write_value(keyboard_backlight, current_keyboard_light);
+        }
+        sleep_time.tv_sec = sleep_length / 1000 / max_steps;
+        sleep_time.tv_nsec = sleep_length % 1000 / max_steps;
+        if(nanosleep(&sleep_time, NULL)) {
+            oneshot = 1;
+            return;
+        }
+    }
 }
 
 int main(int argc, char **argv) {
     pid_t child_pid;
-    struct timespec sleep_time;
-    sleep_time.tv_sec = sleep_length / 1000;
-    sleep_time.tv_nsec = sleep_length % 1000;
+    handle_arguments(argc, argv);
     if(daemonize) {
         child_pid = fork();
         check_error(child_pid < 0, "Failed to fork child.");
@@ -96,44 +130,9 @@ int main(int argc, char **argv) {
         if(child_pid > 0)
             return 0;
     }
-    do {
-        int current_light, new_light;
-        current_light = read_light_value(light_sensor);
-#ifdef DEBUG
-        printf("Current light: %d\n", current_light);
-#endif
-        if(autobacklight) {
-            new_light = current_light;
-            if(new_light < min_backlight_percentage)
-                new_light = min_backlight_percentage;
-            if(new_light > max_backlight_percentage)
-                new_light = max_backlight_percentage;
-            if(oneshot || abs(new_light - get_backlight()) > 5)
-                set_backlight(new_light);
-#ifdef DEBUG
-            else
-                printf("Not setting new value; old too close. (%d, %d)\n",
-                            get_backlight(), new_light);
-#endif
-        }
-        if(autokeyboard) {
-            if(current_light == 0)
-                new_light = max_keyboard_percentage;
-            else
-                new_light = 1 / (current_light / 30.0);
-            if(new_light < min_keyboard_percentage)
-                new_light = min_keyboard_percentage;
-            if(new_light > max_keyboard_percentage)
-                new_light = max_keyboard_percentage;
-            if(oneshot || abs(new_light - get_keyboard_light()) > 1)
-                set_keyboard_light(new_light);
-#ifdef DEBUG
-            else
-                printf("Not setting new value; old too close. (%d, %d)\n",
-                            get_keyboard_light(), new_light);
-#endif
-        }
-    } while(!oneshot && !nanosleep(&sleep_time, NULL));
+    do
+        main_loop();
+    while(!oneshot);
 #ifdef DEBUG
     printf("Exiting.\n");
 #endif
