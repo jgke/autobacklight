@@ -16,7 +16,7 @@ int sleep_length = INTERVAL * 1000;
 int smooth = SMOOTH;
 
 /* how many steps to smooth */
-int max_steps = 5;
+int max_steps = 15;
 
 /* pretend = 1: do not write changes */
 int pretend = 0;
